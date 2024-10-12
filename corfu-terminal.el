@@ -68,11 +68,6 @@ if that ever happens to you please report the issue at
 https://codeberg.org/akib/emacs-corfu-terminal/issues."
   :type 'integer)
 
-(defcustom corfu-terminal-disable-on-gui t
-  "Don't use popon UI on GUI."
-  :type '(choice (const :tag "Yes" t)
-                 (const :tag "No" nil)))
-
 (defvar corfu-terminal--popon nil
   "Popon object.")
 
@@ -84,18 +79,15 @@ https://codeberg.org/akib/emacs-corfu-terminal/issues."
   "Return whether corfu-terminal supports showing popon now."
   (or (not (minibufferp))
       corfu-terminal-enable-on-minibuffer
-      (and corfu-terminal-disable-on-gui
-           (display-graphic-p))))
+      (display-graphic-p)))
 
 (cl-defmethod corfu--popup-hide (&context (corfu-terminal-mode
                                            (eql t)))
   "Hide popup.
 
-If `corfu-terminal-disable-on-gui' is non-nil and  `display-graphic-p'
-returns non-nil then call FN instead, where FN should be the original
-definition in Corfu."
-  (if (and corfu-terminal-disable-on-gui
-           (display-graphic-p))
+If `display-graphic-p' returns non-nil then call FN instead,
+where FN should be the original definition in Corfu."
+  (if (display-graphic-p)
       (cl-call-next-method)
     (when corfu-terminal--popon
       (setq corfu-terminal--popon
@@ -110,82 +102,58 @@ definition in Corfu."
 Show LINES, a list of lines.  Highlight CURRth line as current
 selection.  Show a vertical scroll bar of size BAR + 1 from LOth line.
 
-If `corfu-terminal-disable-on-gui' is non-nil and  `display-graphic-p'
-returns non-nil then call FN instead, where FN should be the original
-definition in Corfu."
-  (if (and corfu-terminal-disable-on-gui
-           (display-graphic-p))
+If `display-graphic-p' returns non-nil then call FN instead,
+where FN should be the original definition in Corfu."
+  (if (display-graphic-p)
       (cl-call-next-method)
     (corfu--popup-hide) ; Hide the popup first.
     (when (and (window-minibuffer-p)
-               (< (/ (window-body-height nil 'pixelwise)
-                     (default-font-height))
+               (< (window-body-height)
                   (1+ (length lines)))
                corfu-terminal-resize-minibuffer
                (not (frame-root-window-p (selected-window))))
       (window-resize nil (- (1+ (length lines))
-                            (/ (window-body-height nil 'pixelwise)
-                               (default-font-height)))))
-    (let* ((bar-width (ceiling (* (default-font-width)
-                                  corfu-bar-width)))
-           (margin-left-width (ceiling (* (default-font-width)
-                                          corfu-left-margin-width)))
-           (margin-right-width (max (ceiling
-                                     (* (default-font-width)
-                                        corfu-right-margin-width))
+                            (window-body-height))))
+    (let* ((x-y (popon-x-y-at-posn pos))
+           (x (car x-y))
+           (y (cdr x-y))
+           (bar-width (ceiling corfu-bar-width))
+           (margin-left-width (if (or (= x 0) (> off 0))
+                                  0
+                                (ceiling corfu-left-margin-width)))
+           (margin-right-width (max (ceiling corfu-right-margin-width)
                                     bar-width))
            (scroll-bar
             (when (< 0 bar-width)
-              (if (display-graphic-p)
-                  (concat
-                   (propertize
-                    " " 'display
-                    `(space
-                      :width (,(- margin-right-width bar-width))))
-                   (propertize " " 'display
-                               `(space :width (,bar-width))
-                               'face 'corfu-bar))
-                (concat
-                 (make-string (- margin-right-width bar-width) ?\ )
-                 (propertize (make-string bar-width ?\ ) 'face
-                             'corfu-bar)))))
+              (concat
+               (make-string (- margin-right-width bar-width) ?\ )
+               (propertize (make-string bar-width ?\ ) 'face
+                           'corfu-bar))))
            (margin-left
             (when (> margin-left-width 0)
-              (if (display-graphic-p)
-                  (propertize
-                   " " 'display `(space :width (,margin-left-width)))
-                (make-string margin-left-width ?\ ))))
+              (make-string margin-left-width ?\ )))
            (margin-right
             (when (> margin-right-width 0)
-              (if (display-graphic-p)
-                  (propertize
-                   " " 'display `(space :width (,margin-right-width)))
-                (make-string margin-right-width ?\ ))))
+              (make-string margin-right-width ?\ )))
            (popon-width
-            (if (display-graphic-p)
-                (+ width (round (/ (+ margin-left-width
-                                      margin-right-width)
-                                   (default-font-width))))
-              (+ width margin-left-width margin-right-width)))
+            (+ width margin-left-width margin-right-width))
            (popon-pos
             (if (equal (cdr corfu-terminal--last-position)
                        (list (posn-point pos) popon-width
                              (window-start) (buffer-modified-tick)))
                 (car corfu-terminal--last-position)
-              (let ((x-y (popon-x-y-at-posn pos)))
-                (cons
-                 (max
-                  (min (- (car x-y) (+ off margin-left-width))
-                       (- (window-max-chars-per-line)
-                          corfu-terminal-position-right-margin
-                          popon-width))
-                  0)
-                 (if (and (< (/ (window-body-height nil 'pixelwise)
-                                (default-font-height))
-                             (+ (1+ (cdr x-y)) (length lines)))
-                          (>= (cdr x-y) (length lines)))
-                     (- (cdr x-y) (length lines))
-                   (1+ (cdr x-y))))))))
+              (cons
+               (max
+                (min (- x (+ off margin-left-width))
+                     (- (window-max-chars-per-line)
+                        corfu-terminal-position-right-margin
+                        popon-width))
+                0)
+               (if (and (< (window-body-height)
+                           (+ (1+ y) (length lines)))
+                        (>= y (length lines)))
+                   (- y (length lines))
+                 (1+ y))))))
       (setq corfu-terminal--last-position
             (list popon-pos (posn-point pos) popon-width
                   (window-start) (buffer-modified-tick)))
@@ -198,8 +166,6 @@ definition in Corfu."
                   (let ((str
                          (concat
                           margin-left line
-                          (make-string (- width (string-width line))
-                                       ?\ )
                           (if (and lo (<= lo line-number (+ lo bar)))
                               scroll-bar
                             margin-right))))
